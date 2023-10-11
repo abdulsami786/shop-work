@@ -4,7 +4,8 @@ import Button from './components/Button';
 import axios from 'axios';
 import { sortProductsByPrice,sortProductsByDiscount,sortProductsById } from './utils';
 import Loader from './components/Loader';
-
+import { collection, getDocs } from "firebase/firestore"; 
+import { db } from './database/libs/firebase-config';
 
 export default function Home() {
  
@@ -21,17 +22,31 @@ export default function Home() {
   const currentRecords = products.slice(indexOfFirstRecord, indexOfLastRecord);
     
   useEffect(() => {
-
     setLoading(true);
-    axios.get('https://shop2-a65de-default-rtdb.asia-southeast1.firebasedatabase.app/products.json')
-    .then((response) => {
-      setProducts(response.data);
-      setLoading(false);
-    })
-    .catch((error) => {
-      console.error('Error fetching data: ', error);
-    });
+  
+    const fetchData = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "products"));
+        const productsData = [];
+        querySnapshot.forEach((doc) => {
+          const product = doc.data();
+          productsData.push(product);
+        });
+  
+        console.log(productsData); 
+  
+       
+        setProducts(productsData);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching data: ', error);
+        setLoading(false);
+      }
+    };
+  
+    fetchData();
   }, []);
+  
 
   const handleSortByPrice = () => {
     
