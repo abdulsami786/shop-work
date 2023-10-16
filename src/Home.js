@@ -1,84 +1,99 @@
 import React, { useEffect, useState } from 'react';
 import ProductCard from './components/ProductCard';
 import Button from './components/Button';
-import axios from 'axios';
+
 import { sortProductsByPrice,sortProductsByDiscount,sortProductsById } from './utils';
 import Loader from './components/Loader';
 import { collection, getDocs } from "firebase/firestore"; 
 import { db } from './database/libs/firebase-config';
-import { query, orderBy, limit } from "firebase/firestore"; 
+import { query, orderBy } from "firebase/firestore"; 
 import { 
-  getFirestore,
-  getCountFromServer,startAt,startAfter   
+  
+  getCountFromServer,startAt,endAt
 } from 'firebase/firestore';
 
 export default function Home() {
  
-  const [originalProducts, setOriginalProducts] = useState([]);
+
   const [products, setProducts] = useState([]);
+
   const [sortByPrice, setSortByPrice] = useState('asc'); 
   const [sortByDiscount, setSortByByDiscount] = useState('asc'); 
   const [sortById, setSortByID] = useState('asc'); 
   const [loading, setLoading] = useState(false); 
   const [pageLength, setPageLength] = useState(0); 
-  const [lastVisible, setLastVisible] = useState([]); 
+  const [pageNo, setPageNo] = useState(1); 
+
 
   const [currentPage, setCurrentPage] = useState(1);
   const recordsPerPage = 12;
-  const indexOfLastRecord = currentPage * recordsPerPage;
-  const indexOfFirstRecord = indexOfLastRecord - recordsPerPage;
-  //const currentRecords = products.slice(indexOfFirstRecord, indexOfLastRecord);
-    console.log(recordsPerPage);
+
+
+  useEffect(()=>{
+
+    const getCount=(async()=>{
+      const collectionRef = collection(db, 'products4');
+      const snapshot = await getCountFromServer(collectionRef)
+  
+      const count = snapshot.data().count;
+      setPageLength(count);
+      console.log(count);
+    })
+
+   getCount();
+  },[pageLength])
+
+
   useEffect(() => {
-    setLoading(true);
-    // const collectionRef = db.collection('products');
-    // const snapshot = await collectionRef.count().get();
-    // console.log(snapshot.data().count);
+      setLoading(true);
+   
     const fetchData = async () => {
       try {
-        const first = query(collection(db, "products"),limit(12));
-        const querySnapshot = await getDocs(first);
-        setLastVisible(querySnapshot.docs[querySnapshot.docs.length-1])
-        console.log("Last visible",lastVisible);
-
-//         const lastVisible = querySnapshot.docs[querySnapshot.docs.length-1];
-// console.log("last", lastVisible);
-
-
-
-        //console.log('count: ', querySnapshot.data().count);
-        //const querySnapshot = await getDocs(collection(db, "products"), limit(2));
-        const collectionRef = collection(db, 'products');
-        const snapshot = await getCountFromServer(collectionRef)
-
-        const count = snapshot.data().count;
-        setPageLength(count);
-        console.log(count);
-        //console.log(snapshot.data().count);
-
-        // const q = query(collection(db, "products"), startAt(recordsPerPage * (currentPage - 1)), limit(12));
+      //   
+        const newIndexOfFirstRecord = (pageNo - 1) * recordsPerPage + 1;
+        const newIndexOfLastRecord = pageNo * recordsPerPage;
+        const cacheKey = `page_${pageNo}`;
+        const cachedData = localStorage.getItem(cacheKey);
+      if (cachedData) {
+        
+        const parsedData = JSON.parse(cachedData);
+        setCurrentPage(pageNo);
+        setProducts(parsedData);
+        setLoading(false);
+        console.log("Return from cache");
+        return;
+      }
+  // Fetch data for the new page 
+        const data = query(
+        collection(db, "products4"),
+        orderBy("p_id"),
+        startAt(newIndexOfFirstRecord),
+        endAt(newIndexOfLastRecord)
+      );
+        const querySnapshot = await getDocs(data);
 
         const productsData = [];
         querySnapshot.forEach((doc) => {
-          const product = doc.data();
-          //console.log("product",product);
-          productsData.push(product);
-        });
+        const product = doc.data();
+        productsData.push(product);
+      });
+
   
-        console.log(productsData); 
+      setCurrentPage(pageNo);
+      setLoading(false);
+      setProducts(productsData);
+      localStorage.setItem(cacheKey, JSON.stringify(productsData));
+
   
-       
-        setProducts(productsData);
-        setLoading(false);
-        setOriginalProducts(productsData);
+      console.log("New Call");
       } catch (error) {
         console.error('Error fetching data: ', error);
         setLoading(false);
       }
     };
-    console.log("Component mounted");
+
     fetchData();
-  }, []);
+  }, [pageNo]);
   
 
   const handleSortByPrice = () => {
@@ -109,60 +124,41 @@ export default function Home() {
     setSortByByDiscount(newSortOrder);
   };
 
-  const changeData = async()=>{
-    const data  = query(collection(db, "products"),
-    orderBy("brand"),
-    startAfter(lastVisible),
-    limit(12));
-    const querySnapshot = await getDocs(data);
-    const productsData = [];
-      querySnapshot.forEach((doc) => {
-        const product = doc.data();
-        //console.log("product",product);
-        productsData.push(product);
-      });
+ 
 
-      //console.log(productsData); 
+const nextPage = async () => {
+  const newPage = currentPage + 1;
 
-      setProducts(productsData);
-      setOriginalProducts([...originalProducts, ...productsData]);
-      setLastVisible(querySnapshot.docs[querySnapshot.docs.length-1])
+  if (newPage <= Math.ceil(pageLength / recordsPerPage)) {
+    setPageNo(newPage);
+  
   }
+};
 
-  const nextPage = async() => {
-    if (currentPage < Math.ceil(pageLength / recordsPerPage)) {
-      setCurrentPage(currentPage + 1);
-     changeData();
-    }
-  };
-  
-  const prevPage = () => {
-    if (currentPage > 1) {
-      setCurrentPage(currentPage - 1);
-      const startIndex = (currentPage - 2) * recordsPerPage;
-      const endIndex = (currentPage - 1) * recordsPerPage;
-      const prevPageProducts = originalProducts.slice(startIndex, endIndex);
-      
-      setProducts(prevPageProducts);
-    }
-  };
-  
-// Function to handle changing the current page when a page number is clicked
+const prevPage = () => {
+  if (currentPage > 1) {
+    const newPage = currentPage - 1;
+    setPageNo(newPage);
+    
+  }
+};
+
 const changePage = (pageNumber) => {
   if (pageNumber >= 1 && pageNumber <= Math.ceil(pageLength / recordsPerPage)) {
-    setCurrentPage(pageNumber);
+    setPageNo(pageNumber);
+  
   }
 };
 // Calculate the range of page numbers to display (6 pages at a time)
 const totalPages = Math.ceil(pageLength / recordsPerPage);
-console.log("total pages",totalPages);
+
 const pageRange = 6;
 const startPage = Math.max(1, currentPage - Math.floor(pageRange / 2));
 const endPage = Math.min(totalPages, startPage + pageRange - 1);
 
 return (
 
-<div className="ml-[10px] container mx-auto mt-2">
+<div className="ml-[10px] container mx-auto mt-2 ">
       <h1 className="text-xl font-semibold mb-5">Product List</h1>
     
       <Button
@@ -179,7 +175,7 @@ return (
        label={`Sort by Discount ${sortByDiscount === 'asc' ? 'High to Low' : 'Low to High'}`}
        />
      
-      <div className="flex flex-wrap -mx-2">
+      <div className="flex flex-wrap -mx-1">
         {loading? <Loader/> :(products.map((product , index) => (
           <ProductCard key={index} 
           imageUrl={product.imageUrl}
@@ -190,7 +186,7 @@ return (
           />
         )))}
       </div>
-      <div className="mt-5 flex justify-between">
+      <div className="mt-5 flex justify-between mr-6">
    
         <Button
         onClick={prevPage}
